@@ -168,7 +168,7 @@ function PCCard({ pc, onDelete, onSelect, selected }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "'Space Mono', monospace", fontSize: "0.82rem", color: "#cdd6f4", marginBottom: "3px", letterSpacing: "0.05em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pc.hostname || "Unnamed PC"}</div>
-          <div style={{ fontSize: "0.7rem", color: "#6c7086", marginBottom: "6px" }}>{pc.department}</div>
+          <div style={{ fontSize: "0.7rem", color: "#6c7086", marginBottom: "6px" }}>{pc.company} · {pc.department}</div>
           <StatusBadge status={status} />
         </div>
         <button onClick={(e) => { e.stopPropagation(); onDelete(pc.id); }} style={{ background: "none", border: "none", color: "#45475a", cursor: "pointer", fontSize: "0.9rem", padding: "0 4px", lineHeight: 1 }}>✕</button>
@@ -196,6 +196,9 @@ function CompanyGroup({ company, pcs, selectedId, onSelect, onDelete }) {
   const [collapsed, setCollapsed] = useState(false);
   const color = COMPANY_COLORS[company];
   const complete = pcs.filter(p => getStatus(p.checks, p.department) === "Complete").length;
+  // Only show active (non-complete) PCs in company groups
+  const activePCs = pcs.filter(p => getStatus(p.checks, p.department) !== "Complete");
+  if (activePCs.length === 0) return null;
   return (
     <div style={{ marginBottom: "16px" }}>
       <div onClick={() => setCollapsed(c => !c)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", cursor: "pointer", background: "#1a1a2e", borderRadius: "6px", border: `1px solid ${color}22`, borderLeft: `3px solid ${color}`, marginBottom: collapsed ? "0" : "10px" }}>
@@ -207,9 +210,35 @@ function CompanyGroup({ company, pcs, selectedId, onSelect, onDelete }) {
       </div>
       {!collapsed && (
         <>
-          <DeptGroup label="Shop Floor" pcs={pcs.filter(p => p.department === "Shop Floor")} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} />
-          <DeptGroup label="Office PC" pcs={pcs.filter(p => p.department === "Office PC")} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} />
+          <DeptGroup label="Shop Floor" pcs={activePCs.filter(p => p.department === "Shop Floor")} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} />
+          <DeptGroup label="Office PC" pcs={activePCs.filter(p => p.department === "Office PC")} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} />
         </>
+      )}
+    </div>
+  );
+}
+
+function CompletedGroup({ pcs, selectedId, onSelect, onDelete }) {
+  const [collapsed, setCollapsed] = useState(true);
+  if (pcs.length === 0) return null;
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <div onClick={() => setCollapsed(c => !c)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 10px", cursor: "pointer", background: "#1a2e1a",
+        borderRadius: "6px", border: "1px solid #a6e3a122",
+        borderLeft: "3px solid #a6e3a1", marginBottom: collapsed ? "0" : "10px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "0.75rem", fontFamily: "'Space Mono', monospace", color: "#a6e3a1", letterSpacing: "0.08em", fontWeight: "700" }}>✓ Completed</span>
+          <span style={{ fontSize: "0.55rem", color: "#45475a", fontFamily: "'Space Mono', monospace" }}>{pcs.length} PC{pcs.length !== 1 ? "s" : ""}</span>
+        </div>
+        <span style={{ color: "#a6e3a1", fontSize: "0.7rem" }}>{collapsed ? "▶" : "▼"}</span>
+      </div>
+      {!collapsed && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginLeft: "10px" }}>
+          {pcs.map(pc => <PCCard key={pc.id} pc={pc} onDelete={onDelete} onSelect={onSelect} selected={selectedId === pc.id} />)}
+        </div>
       )}
     </div>
   );
@@ -310,8 +339,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Real-time listener from Firestore
   useEffect(() => {
     if (!currentUser) return;
     setLoading(true);
@@ -327,13 +356,9 @@ export default function App() {
     if (!hostname.trim()) return;
     const tasks = getChecklist(department);
     await addDoc(collection(db, "pcs"), {
-      hostname: hostname.trim(),
-      company,
-      department,
+      hostname: hostname.trim(), company, department,
       checks: Object.fromEntries(tasks.map(t => [t, 0])),
-      notes: "",
-      createdBy: currentUser,
-      createdAt: Date.now(),
+      notes: "", createdBy: currentUser, createdAt: Date.now(),
     });
     setShowModal(false);
   };
@@ -358,53 +383,89 @@ export default function App() {
   const total = pcs.length;
   const complete = pcs.filter(p => getStatus(p.checks, p.department) === "Complete").length;
   const inProgress = pcs.filter(p => getStatus(p.checks, p.department) === "In Progress").length;
-  const blackstonePCs = pcs.filter(p => p.company === "Blackstone");
-  const ulrichPCs = pcs.filter(p => p.company === "Ulrich");
+
+  const activePCs = pcs.filter(p => getStatus(p.checks, p.department) !== "Complete");
+  const completedPCs = pcs.filter(p => getStatus(p.checks, p.department) === "Complete");
+  const blackstonePCs = activePCs.filter(p => p.company === "Blackstone");
+  const ulrichPCs = activePCs.filter(p => p.company === "Ulrich");
 
   return (
     <div style={{ minHeight: "100vh", background: "#11111b", fontFamily: "'Space Mono', monospace", color: "#cdd6f4", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <style>{`
+        @media (max-width: 600px) {
+          .header-stats { display: none !important; }
+          .header-title-sub { display: none !important; }
+        }
+      `}</style>
 
       {/* Header */}
-      <div style={{ borderBottom: "1px solid #1e1e2e", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ fontSize: "0.65rem", color: "#45475a", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "2px" }}>BAT PC Project</div>
-          <div style={{ fontSize: "1rem", color: "#cdd6f4", letterSpacing: "0.08em" }}>Win11 Upgrade Tracker</div>
-        </div>
-        <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-          {[
-            { label: "Total", value: total, color: "#89b4fa" },
-            { label: "Active", value: inProgress, color: "#f38ba8" },
-            { label: "Done", value: complete, color: "#a6e3a1" },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "1.2rem", color }}>{value}</div>
-              <div style={{ fontSize: "0.55rem", color: "#45475a", textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
-            </div>
-          ))}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginLeft: "8px", paddingLeft: "16px", borderLeft: "1px solid #313244" }}>
-            <span style={{ fontSize: "0.7rem", color: "#6c7086", fontFamily: "'Space Mono', monospace" }}>{currentUser}</span>
-            <button onClick={() => { setCurrentUser(null); setPCs([]); setLoading(true); }} style={{ background: "transparent", border: "1px solid #313244", borderRadius: "5px", color: "#45475a", fontFamily: "'Space Mono', monospace", fontSize: "0.65rem", padding: "5px 10px", cursor: "pointer" }}>Sign Out</button>
+      <div style={{ borderBottom: "1px solid #1e1e2e", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {/* Sidebar toggle button */}
+          <button
+            onClick={() => setSidebarOpen(o => !o)}
+            style={{ background: "transparent", border: "1px solid #313244", borderRadius: "6px", color: "#6c7086", fontFamily: "'Space Mono', monospace", fontSize: "0.75rem", padding: "6px 10px", cursor: "pointer", lineHeight: 1, flexShrink: 0 }}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          >
+            {sidebarOpen ? "◀" : "▶"}
+          </button>
+          <div>
+            <div className="header-title-sub" style={{ fontSize: "0.6rem", color: "#45475a", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "1px" }}>BAT PC Project</div>
+            <div style={{ fontSize: "0.95rem", color: "#cdd6f4", letterSpacing: "0.08em" }}>Win11 Upgrade Tracker</div>
           </div>
-          <button onClick={() => setShowModal(true)} style={{ background: "#89b4fa", border: "none", borderRadius: "6px", color: "#1e1e2e", fontFamily: "'Space Mono', monospace", fontSize: "0.75rem", padding: "8px 16px", cursor: "pointer", letterSpacing: "0.05em" }}>+ Add PC</button>
+        </div>
+        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+          <div className="header-stats" style={{ display: "flex", gap: "16px" }}>
+            {[
+              { label: "Total", value: total, color: "#89b4fa" },
+              { label: "Active", value: inProgress, color: "#f38ba8" },
+              { label: "Done", value: complete, color: "#a6e3a1" },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "1.1rem", color }}>{value}</div>
+                <div style={{ fontSize: "0.5rem", color: "#45475a", textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", paddingLeft: "12px", borderLeft: "1px solid #313244" }}>
+            <span style={{ fontSize: "0.7rem", color: "#6c7086", fontFamily: "'Space Mono', monospace" }}>{currentUser}</span>
+            <button onClick={() => { setCurrentUser(null); setPCs([]); setLoading(true); }} style={{ background: "transparent", border: "1px solid #313244", borderRadius: "5px", color: "#45475a", fontFamily: "'Space Mono', monospace", fontSize: "0.6rem", padding: "5px 8px", cursor: "pointer" }}>Out</button>
+          </div>
+          <button onClick={() => setShowModal(true)} style={{ background: "#89b4fa", border: "none", borderRadius: "6px", color: "#1e1e2e", fontFamily: "'Space Mono', monospace", fontSize: "0.7rem", padding: "8px 12px", cursor: "pointer", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>+ Add PC</button>
         </div>
       </div>
 
       {/* Body */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <div style={{ width: "300px", flexShrink: 0, borderRight: "1px solid #1e1e2e", overflowY: "auto", padding: "16px" }}>
-          {loading ? (
-            <div style={{ textAlign: "center", color: "#45475a", fontSize: "0.75rem", marginTop: "40px", fontFamily: "'Space Mono', monospace" }}>Loading...</div>
-          ) : pcs.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#45475a", fontSize: "0.75rem", marginTop: "40px", lineHeight: 2 }}>No PCs added yet.<br />Click + Add PC to start.</div>
-          ) : (
-            <>
-              {blackstonePCs.length > 0 && <CompanyGroup company="Blackstone" pcs={blackstonePCs} selectedId={selectedId} onSelect={setSelectedId} onDelete={deletePC} />}
-              {ulrichPCs.length > 0 && <CompanyGroup company="Ulrich" pcs={ulrichPCs} selectedId={selectedId} onSelect={setSelectedId} onDelete={deletePC} />}
-            </>
+
+        {/* Sidebar */}
+        <div style={{
+          width: sidebarOpen ? "300px" : "0px",
+          flexShrink: 0,
+          borderRight: sidebarOpen ? "1px solid #1e1e2e" : "none",
+          overflowY: sidebarOpen ? "auto" : "hidden",
+          overflowX: "hidden",
+          padding: sidebarOpen ? "16px" : "0",
+          transition: "width 0.25s cubic-bezier(.4,0,.2,1), padding 0.25s",
+        }}>
+          {sidebarOpen && (
+            loading ? (
+              <div style={{ textAlign: "center", color: "#45475a", fontSize: "0.75rem", marginTop: "40px", fontFamily: "'Space Mono', monospace" }}>Loading...</div>
+            ) : pcs.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#45475a", fontSize: "0.75rem", marginTop: "40px", lineHeight: 2 }}>No PCs added yet.<br />Click + Add PC to start.</div>
+            ) : (
+              <>
+                {blackstonePCs.length > 0 && <CompanyGroup company="Blackstone" pcs={pcs.filter(p => p.company === "Blackstone")} selectedId={selectedId} onSelect={setSelectedId} onDelete={deletePC} />}
+                {ulrichPCs.length > 0 && <CompanyGroup company="Ulrich" pcs={pcs.filter(p => p.company === "Ulrich")} selectedId={selectedId} onSelect={setSelectedId} onDelete={deletePC} />}
+                <CompletedGroup pcs={completedPCs} selectedId={selectedId} onSelect={setSelectedId} onDelete={deletePC} />
+              </>
+            )
           )}
         </div>
-        <div style={{ flex: 1, padding: "24px", overflowY: "auto" }}>
+
+        {/* Checklist Panel */}
+        <div style={{ flex: 1, padding: "24px", overflowY: "auto", minWidth: 0 }}>
           <ChecklistPanel pc={selectedPC} onCycle={cycleCheck} onNotesChange={updateNotes} />
         </div>
       </div>
