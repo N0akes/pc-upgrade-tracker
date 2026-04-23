@@ -28,7 +28,7 @@ const DEPARTMENTS = ["Shop Floor", "Office PC"];
 const CHECKLISTS = {
   "Shop Floor": [
     "Windows 11 Installed","Joined Domain","Account Added",
-    "Adobe Reader Installed","Open Office / M365 Installed",
+    "Adobe Reader Installed","Open Office - M365 Installed",
     "ScreenConnect Installed","Trend Micro Installed",
     "Solid Edge 2025 Installed","Epicor Installed",
     "Printer Mapped","Desktop Icons Pasted","Windows Updates",
@@ -37,7 +37,7 @@ const CHECKLISTS = {
   ],
   "Office PC": [
     "Windows 11 Installed","Joined Domain","Account Added",
-    "Adobe Reader Installed","Open Office / M365 Installed",
+    "Adobe Reader Installed","Open Office - M365 Installed",
     "ScreenConnect Installed","Trend Micro Installed",
     "Solid Edge 2025 Installed","Epicor Installed",
     "Printer Mapped","Desktop Icons Pasted","Bookmarks Imported",
