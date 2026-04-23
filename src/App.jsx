@@ -187,7 +187,6 @@ function PCCard({ pc, onDelete, onSelect, selected }) {
             <div style={{ fontFamily:"'Space Mono',monospace", fontSize:"0.82rem", color:"#cdd6f4", marginBottom:"3px", letterSpacing:"0.05em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{pc.hostname||"Unnamed PC"}</div>
             <div style={{ fontSize:"0.7rem", color:"#6c7086", marginBottom:"3px" }}>{pc.company} · {pc.department}</div>
             {pc.swapDate && <div style={{ fontSize:"0.6rem", color:"#45475a", marginBottom:"5px", fontFamily:"'Space Mono',monospace" }}>Swapped {formatDate(pc.swapDate)}</div>}
-            {pc.lastUpdatedBy && <div style={{ fontSize:"0.58rem", color:"#45475a", marginBottom:"5px", fontFamily:"'Space Mono',monospace" }}>Updated by {pc.lastUpdatedBy}</div>}
             <StatusBadge status={status} />
           </div>
           <button onClick={e=>{e.stopPropagation();setConfirmDelete(true);}} style={{ background:"none", border:"none", color:"#45475a", cursor:"pointer", fontSize:"0.9rem", padding:"0 4px", lineHeight:1 }}>✕</button>
@@ -277,7 +276,7 @@ function CompletedGroup({ pcs, selectedId, onSelect, onDelete }) {
 }
 
 // --- Checklist Panel ---
-function ChecklistPanel({ pc, onCycle, onNotesChange }) {
+function ChecklistPanel({ pc, onCycle, onNotesChange, onSwapDateChange }) {
   if (!pc) return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"#45475a", fontFamily:"'Space Mono',monospace", fontSize:"0.8rem", gap:"12px" }}>
       <div style={{ fontSize:"2rem" }}>⬡</div>
@@ -296,7 +295,16 @@ function ChecklistPanel({ pc, onCycle, onNotesChange }) {
           <span style={{ fontSize:"0.6rem", color:"#45475a", fontFamily:"'Space Mono',monospace" }}>{pc.department}</span>
         </div>
         <div style={{ fontFamily:"'Space Mono',monospace", fontSize:"1rem", color:"#cdd6f4", letterSpacing:"0.08em", marginBottom:"6px" }}>{pc.hostname}</div>
-        {pc.swapDate && <div style={{ fontSize:"0.65rem", color:"#585b70", fontFamily:"'Space Mono',monospace", marginBottom:"6px" }}>Swapped {formatDate(pc.swapDate)}</div>}
+        {/* Editable swap date */}
+        <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"6px" }}>
+          <span style={{ fontSize:"0.6rem", color:"#585b70", fontFamily:"'Space Mono',monospace", textTransform:"uppercase", letterSpacing:"0.1em", whiteSpace:"nowrap" }}>Swap Date</span>
+          <input
+            type="date"
+            value={pc.swapDate ? new Date(pc.swapDate).toISOString().split("T")[0] : ""}
+            onChange={e => onSwapDateChange(pc.id, e.target.value)}
+            style={{ background:"#181825", border:"1px solid #313244", borderRadius:"5px", color: pc.swapDate ? "#cdd6f4" : "#45475a", fontFamily:"'Space Mono',monospace", fontSize:"0.65rem", padding:"4px 8px", outline:"none", colorScheme:"dark", cursor:"pointer" }}
+          />
+        </div>
         {pc.lastUpdatedBy && <div style={{ fontSize:"0.62rem", color:"#45475a", fontFamily:"'Space Mono',monospace", marginBottom:"8px" }}>Last updated by {pc.lastUpdatedBy}</div>}
         <StatusBadge status={status}/>
         <ProgressBar checks={pc.checks} department={pc.department}/>
@@ -335,7 +343,6 @@ function ChecklistPanel({ pc, onCycle, onNotesChange }) {
 function AddPCModal({ onAdd, onClose }) {
   const [company, setCompany] = useState("Blackstone");
   const [department, setDepartment] = useState("Shop Floor");
-  const [swapDate, setSwapDate] = useState(todayValue());
   const [hostnames, setHostnames] = useState([""]);
   const lastRef = useRef(null);
 
@@ -346,7 +353,7 @@ function AddPCModal({ onAdd, onClose }) {
   const handleAdd = () => {
     const valid = hostnames.map(h=>h.trim()).filter(Boolean);
     if (valid.length===0) return;
-    onAdd(valid, company, department, swapDate);
+    onAdd(valid, company, department);
   };
 
   const inp = { width:"100%", background:"#181825", border:"1px solid #313244", borderRadius:"6px", color:"#cdd6f4", fontFamily:"'Space Mono',monospace", fontSize:"0.78rem", padding:"9px 12px", outline:"none", boxSizing:"border-box" };
@@ -358,7 +365,7 @@ function AddPCModal({ onAdd, onClose }) {
         <div style={{ fontFamily:"'Space Mono',monospace", color:"#cdd6f4", fontSize:"0.9rem", letterSpacing:"0.08em", marginBottom:"18px" }}>Add PC{hostnames.length>1?"s":""}</div>
 
         {/* Shared settings */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"12px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px", marginBottom:"16px" }}>
           <div>
             <span style={lbl}>Company</span>
             <select value={company} onChange={e=>setCompany(e.target.value)} style={{...inp,cursor:"pointer"}}>
@@ -371,11 +378,6 @@ function AddPCModal({ onAdd, onClose }) {
               {DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}
             </select>
           </div>
-        </div>
-
-        <div style={{ marginBottom:"16px" }}>
-          <span style={lbl}>Swap Date</span>
-          <input type="date" value={swapDate} onChange={e=>setSwapDate(e.target.value)} style={{...inp, colorScheme:"dark"}}/>
         </div>
 
         {/* Hostname rows */}
@@ -432,24 +434,29 @@ export default function App() {
     return ()=>unsub();
   }, [currentUser]);
 
-  const addPCs = async (hostnames, company, department, swapDateStr) => {
+  const addPCs = async (hostnames, company, department) => {
     const tasks = getChecklist(department);
-    const swapDate = dateToTs(swapDateStr);
-    const allComplete = Object.fromEntries(tasks.map(t=>[t,1]));
-    const isBackdated = swapDateStr !== todayValue();
     for (const hostname of hostnames) {
       await addDoc(collection(db,"pcs"), {
         hostname, company, department,
-        checks: isBackdated ? allComplete : Object.fromEntries(tasks.map(t=>[t,0])),
+        checks: Object.fromEntries(tasks.map(t=>[t,0])),
         notes: "",
         createdBy: currentUser,
         createdAt: Date.now(),
-        swapDate,
+        swapDate: null,
         lastUpdatedBy: currentUser,
         lastUpdatedAt: Date.now(),
       });
     }
     setShowModal(false);
+  };
+
+  const updateSwapDate = async (id, dateStr) => {
+    await updateDoc(doc(db,"pcs",id), {
+      swapDate: dateStr ? dateToTs(dateStr) : null,
+      lastUpdatedBy: currentUser,
+      lastUpdatedAt: Date.now(),
+    });
   };
 
   const deletePC = async (id) => {
@@ -548,7 +555,7 @@ export default function App() {
           )}
         </div>
         <div style={{ flex:1, padding:"24px", overflowY:"auto", minWidth:0 }}>
-          <ChecklistPanel pc={selectedPC} onCycle={cycleCheck} onNotesChange={updateNotes}/>
+          <ChecklistPanel pc={selectedPC} onCycle={cycleCheck} onNotesChange={updateNotes} onSwapDateChange={updateSwapDate}/>
         </div>
       </div>
 
